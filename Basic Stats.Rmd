@@ -1,0 +1,273 @@
+---
+title: "Basics Stats"
+output: html_document
+date: "2023-07-22"
+author: "Mercedeh Movassagh PhD, Yale University"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview of this R Markdown
+
+This R Markdown document is prepared for teaching basic statistical sensitivity tests, simple regression models and ROC plots in R. The datasets used in this session are all part of the standard libraries used in the R markdown tutorial.
+
+```{r  message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(palmerpenguins)
+library(ggstatsplot)
+library(MASS)
+library(ISLR2)
+library(car)
+library(caret)
+library(pROC)
+library(verification)
+```
+
+## T.test
+
+Remember t.test is only performed for variable comparison with two levels. Now, assume you want to compare the difference between the petal width of the setosa and virginica species in this data set and perform a t.test on it.
+
+```{r  message=FALSE, warning=FALSE}
+Ex_species<-iris
+table(Ex_species$Species) #how many measurements are present for all the species variable
+Ex_species<-Ex_species%>%filter(!Species %in% c("versicolor"))
+Ex_species$Species<-factor(Ex_species$Species) 
+# draw box plot and compare Petal.Length and Width between the setosa and virginica species
+Spec<-Ex_species%>%dplyr::select(Petal.Length,Species)
+SpecPlot<-ggplot(Spec, aes(x=Species, y=Petal.Length, color=Species)) + 
+ geom_boxplot() +
+  geom_jitter() +
+    labs(x = "Species", y = "Petal.Length", fill = "Species", color = "Species") +
+    scale_color_brewer(palette="Dark2")
+method <- "t.test" # one of "wilcox.test" or "t.test"
+paired <- FALSE
+print(SpecPlot + stat_compare_means(aes(label = paste0(after_stat(method), ", p-value = ", after_stat(p.format))),
+      method = method,
+      paired = paired,
+      # group.by = NULL,
+      ref.group = NULL
+))
+print(t.test(Ex_species$Petal.Length ~ Ex_species$Species))#Print just the P test results
+
+```
+
+## ANOVA
+
+As mentioned ANOVA is used when we want to compare groups. Basically, what we are testing is there is a difference between the groups we are comparing. In this new penguins data set we are trying to compare the length of flippers of various penguin species using ANOVA.Choosing ANOVA type is really related to the type of independent variable. If you have two independent variables you should use two way ANOVA if there is one you use one way ANOVA.
+
+```{r  message=FALSE, warning=FALSE}
+Spec_Pangs<-penguins %>%
+  dplyr::select(species, flipper_length_mm)
+pang_plot<-ggplot(Spec_Pangs) +
+  aes(x = species, y = flipper_length_mm, color = species) +
+  geom_boxplot() +
+  geom_jitter() +
+    labs(x = "Species", y = "Flipper Length (mm) ", fill = "Species", color = "Species") +
+    scale_color_brewer(palette="Dark2")+theme(legend.position = "none")
+res_aov2 <- aov(flipper_length_mm ~ species,
+  data = Spec_Pangs
+)
+print(pang_plot +  stat_compare_means(method = "anova"
+))
+#Method2
+pang_plot2<-ggbetweenstats(
+  data = Spec_Pangs,
+  x = species,
+  y = flipper_length_mm,
+  type = "parametric", # ANOVA
+  var.equal = TRUE, # ANOVA or Welch ANOVA
+  plot.type = "box",
+  pairwise.comparisons = TRUE,
+  pairwise.display = "significant",
+  centrality.plotting = FALSE,
+  bf.message = FALSE,
+  palette = "Dark2"
+)
+pang_plot2
+```
+
+## Fisher Test
+
+Remember for Fisher Test you would need a smaller variable observation and it needs to be a categorical observation. Here, we are interested to see the difference in smokers and non-smokers developing long cancer.
+
+```{r  message=FALSE, warning=FALSE}
+#Create your own contingency table
+smoking_dt <- data.frame(
+  "smoke_no" = c(9, 0),
+  "smoke_yes" = c(2, 8),
+  row.names = c("no-cancer", "cancer"),
+  stringsAsFactors = FALSE
+)
+colnames(smoking_dt) <- c("Non-smoker", "Smoker")
+smoking_dt
+#You can make a mosaic plot for visualizing the contingency table
+mos_smoke<-mosaicplot(smoking_dt,
+  main = "Mosaic plot",
+  color = TRUE
+)
+mos_smoke
+#Make a dataset of that resonates the above contingency table.
+x <- c()
+for (row in rownames(smoking_dt)) {
+  for (col in colnames(smoking_dt)) {
+    x <- rbind(x, matrix(rep(c(row, col), smoking_dt[row, col]), ncol = 2, byrow = TRUE))
+  }
+}
+smoking_dt2 <- as.data.frame(x)
+colnames(smoking_dt2) <- c("Cancer_Development", "Smoking_habits")
+f_test<-fisher.test(table(smoking_dt2))
+#Create a bar plot with fisher test statistics on the difference between smoking habits and development of cancer.  
+ggbarstats(
+  smoking_dt2, Smoking_habits, Cancer_Development,
+  results.subtitle = FALSE,  palette = "Dark2",
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(f_test$p.value < 0.001, "< 0.001", round(f_test$p.value, 3))
+  )
+)
+```
+
+## Chi-squared test
+
+Recall, chi-squared test works by comparing the observed frequencies to the expected frequencies if there was no relationship between two categorical variables, in higher observed variable numbers recommended n\>10. We go back to our initial penguins data set to show if there the species of the penguin is associated with the small or big category of the flipper length.
+
+```{r  message=FALSE, warning=FALSE}
+Spec_Pangs_Chi<-Spec_Pangs
+Spec_Pangs_Chi<-na.omit(Spec_Pangs_Chi)
+Spec_Pangs_Chi$flipper_length <- ifelse(Spec_Pangs_Chi$flipper_length_mm < median(Spec_Pangs_Chi$flipper_length_mm),
+  "small", "big"
+)
+#How does the contingency table look like?
+table(Spec_Pangs_Chi$species, Spec_Pangs_Chi$flipper_length)
+chisq.test(Spec_Pangs_Chi$flipper_length,Spec_Pangs_Chi$species)
+#Draw a bar mosaic plot show statistics and chis-quare test for all observations:
+ggbarstats(
+  data = Spec_Pangs_Chi,
+  x = flipper_length,
+  y = species,  
+  palette = "Dark2"
+) +
+  labs(caption = NULL) # remove caption
+```
+
+## Linear Regression
+
+We are now going to go over a linear expression example using the ISLR2. We want to predict median house value (medv) in Boston. We will use 12 predictors (features) to predict the medv (response).
+
+```{r  message=FALSE, warning=FALSE}
+head(Boston)
+#use lm() to run linear regression using age predictor
+lm.fit<-lm(medv~age,data=Boston)
+lm.fit
+summary(lm.fit)
+#What are the stored variables in lm.fit
+names(lm.fit)
+#What is the coefficient
+coef(lm.fit)
+#What is the 95% confidence interval?
+confint(lm.fit)
+#Plot your fit
+par(2,2)
+attach(Boston)
+plot(age,medv)
+abline(lm.fit,col="red",lwd=3)
+#plot residual
+plot(predict(lm.fit),residuals(lm.fit))
+```
+
+## Multiple Regression
+
+In this section we want to see what happens if we have a more real situation when predicting median house value (medv) so we shall add more than 1 predictor to see the various predictor affects on the model.
+
+```{r  message=FALSE, warning=FALSE}
+#Add percent of household with low socieoeconomic status (lstat)
+multi_two_lm.fit<-lm(medv ~ age + lstat, data=Boston)
+summary(multi_two_lm.fit)
+#Now add all other predictors:
+lm.fit_all<-lm(medv ~ . , data=Boston)
+summary(lm.fit_all)
+#Get the rsquare value
+summary(lm.fit_all)$r.sq
+#Get the RSE value
+summary(lm.fit_all)$sigma
+#Compute variance inflation factor
+vif(lm.fit_all)
+#If you want to see the affect a variable (remove a variable and compare with ANOVA before and after feature removal you can do the following)
+lm.fit_all<-lm(medv ~ . , data=Boston)
+summary(lm.fit_all)
+lm.fit_all_WO_Age<-lm(medv ~ . -age , data=Boston)
+summary(lm.fit_all_WO_Age)
+anova(lm.fit_all,lm.fit_all_WO_Age)
+```
+
+## Logistic regression
+
+Recall logistic regression (LR) was used when we are dealing with binary response values and it follows the binomial distribution assumptions. We will use the Smarket data from the ISLR2 package as an example for LR.
+
+```{r  message=FALSE, warning=FALSE}
+names(Smarket)
+#do correlation on the numeric variable of Smarket
+cor(Smarket[,-9]) #Only big correlation is between year and Volume
+logistic_fit<-glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4+ Lag5 + Volume, data = Smarket, family = binomial )
+summary(logistic_fit)
+#find coefficient
+coef(logistic_fit)
+#print out the probabilities for the training data that the model was fit on
+glm_probs<-predict(logistic_fit, type = "response")
+```
+
+## ROC Plots
+Remember ROC plots were made to help us understand how accurate and specific our model is. We will now make a ROC curve for the logistic regression example above.
+
+```{r  message=FALSE, warning=FALSE}
+#error metrics -- Confusion Matrix
+err_metric=function(CM)
+{
+  TN =CM[1,1]
+  TP =CM[2,2]
+  FP =CM[1,2]
+  FN =CM[2,1]
+  precision =(TP)/(TP+FP)
+  recall_score =(FP)/(FP+TN)
+  f1_score=2*((precision*recall_score)/(precision+recall_score))
+  accuracy_model  =(TP+TN)/(TP+TN+FP+FN)
+  False_positive_rate =(FP)/(FP+TN)
+  False_negative_rate =(FN)/(FN+TP)
+  print(paste("Precision value of the model: ",round(precision,2)))
+  print(paste("Accuracy of the model: ",round(accuracy_model,2)))
+  print(paste("Recall value of the model: ",round(recall_score,2)))
+  print(paste("False Positive rate of the model: ",round(False_positive_rate,2)))
+  print(paste("False Negative rate of the model: ",round(False_negative_rate,2)))
+  print(paste("f1 score of the model: ",round(f1_score,2)))
+}
+set.seed(101)
+split = createDataPartition(Smarket$Direction, p = 0.60, list = FALSE)
+train_data = Smarket[split,]
+test_data = Smarket[-split,]
+logit_m<-glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4+ Lag5 + Volume, data = train_data, family = binomial )
+logit_P = predict(logit_m , newdata = test_data[-9] ,type = 'response' )
+logit_P <- ifelse(logit_P > 0.5,1,0) # Probability check
+CM= table(test_data[,9] , logit_P)
+print(CM)
+err_metric(CM)
+#ROC-curve using pROC library
+roc_score=roc(test_data[,9], logit_P) #AUC score
+roc_score
+plot(roc_score ,main ="ROC curve -- Logistic Regression ")
+#Another way to daw ROC plots is as follows using the verification package :
+A<- c(0,0,0,1,1,1)
+#y<- c(.9, .8, 0, 1, 4,.9)
+B<- c(1,0,0,1,1,0)
+examp<-data.frame(A,B)
+names(examp)<-c("up","down")
+#roc.plot(examp$up,examp$down)
+```
+
+## Reference
+
+reference: "James, G., D. Witten, T. Hastie, and R. Tibshirani. 2013. “An Introduction to Statistical Learning.” https://link.springer.com/content/pdf/10.1007/978-1-0716-1418-1.pdf."

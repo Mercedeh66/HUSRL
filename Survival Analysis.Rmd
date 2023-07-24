@@ -1,0 +1,86 @@
+---
+title: "Survival Analysis"
+output: html_document
+date: "2023-07-22"
+author: "Mercedeh Movassagh PhD, Yale University"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview of this R Markdown
+This R Markdown will teach you how to do survival analysis using R.
+
+```{r  message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(MASS)
+library(ISLR2)
+library(car)
+library(survival)
+```
+
+## Survival Analysis
+
+For this analysis we will use the BrainCancer data in the ISRL2 package.
+
+As a reminder status=1 indicates uncensored observation and status =0 indicates a censored observation. In this data set 35 patients die before the end of the study.The survival analysis is commonly done using the survifit().
+
+```{r  message=FALSE, warning=FALSE}
+#get familiar with the dataset
+attach(BrainCancer)
+names(BrainCancer)
+table(sex)
+table(status)
+#Note time corresponds to yi (the time to the ith event, either censoring or death)
+fit_surv<-survfit(Surv(time,status) ~ 1)
+#Now olor the fit_surv
+plot(fit_surv,xlab="Months",ylab="Estimated Probability of Survival")
+#Now you can stratify by other features such as sex
+fit_surv<-survfit(Surv(time,status) ~ sex)
+plot(fit_surv,xlab="Months",ylab="Estimated Probability of Survival", col=c(2,4))
+```
+
+## Log-rank test
+
+You can use the long rank test to compare survival between two groups in this example sex of the patients.
+
+```{r  message=FALSE, warning=FALSE}
+logrank_test<-survdiff(Surv(time,status) ~ sex)
+logrank_test
+logrank_test$chisq
+#The test shows there is no evidence of difference for survival between males and females.
+```
+
+## Cox Proprtional Hazardz
+
+Recall cox-ph models can be used for both binary/categorical and continuous predictors for estimating survival.
+
+```{r  message=FALSE, warning=FALSE}
+fit_cox<-coxph(Surv(time,status) ~ sex)
+summary(fit_cox)#Neither of the tests show association between sex and survival
+#Now check for all other predictors
+fit_all<-coxph(Surv(time, status) ~ sex + diagnosis + loc + ki + gtv + stereo)
+fit_all
+#Show all the predictors in one plot
+all_new<-data.frame(
+  diagnosis=levels(diagnosis),
+  sex= rep("Female",4),
+  loc= rep("Supratentorial",4),
+  ki= rep(mean(ki),4),
+  gtv = rep(mean(gtv),4),
+  stereo = rep ("SRT",4)
+)
+Survplots<-survfit(fit_all,newdata = all_new)      
+plot(Survplots, xlab = "Months",
+     ylab= "Survival Probability", col= 2:5)
+legend("bottomleft",levels(diagnosis), col=2:5, lty=1)
+```
+## Reference
+
+reference: "James, G., D. Witten, T. Hastie, and R. Tibshirani. 2013. “An Introduction to Statistical Learning.” https://link.springer.com/content/pdf/10.1007/978-1-0716-1418-1.pdf."
+
+
